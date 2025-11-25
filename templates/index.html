@@ -1,76 +1,186 @@
-cd ~/Desktop/Loan_Service
-
-cat > app.py << 'EOF'
-from flask import Flask, request, jsonify, send_from_directory
-import joblib
-import numpy as np
-import os
-
-app = Flask(__name__, static_folder='.')
-
-# Load model and scaler
-model = joblib.load('loan_model.pkl')
-scaler = joblib.load('scaler.pkl')
-
-@app.route('/')
-def home():
-    return send_from_directory('.', 'index.html')
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    try:
-        data = request.get_json()
-        
-        required_fields = ['income', 'age', 'loan_amount', 'credit_score', 'employment_years']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({
-                    "error": f"Missing required field: {field}",
-                    "required_fields": required_fields
-                }), 400
-        
-        features = np.array([[
-            float(data['income']),
-            float(data['age']),
-            float(data['loan_amount']),
-            float(data['credit_score']),
-            float(data['employment_years'])
-        ]])
-        
-        features_scaled = scaler.transform(features)
-        prediction = model.predict(features_scaled)[0]
-        probability = model.predict_proba(features_scaled)[0]
-        
-        result = {
-            "loan_approved": bool(prediction),
-            "approval_status": "Approved" if prediction == 1 else "Rejected",
-            "confidence": {
-                "rejection_probability": float(probability[0]),
-                "approval_probability": float(probability[1])
-            },
-            "input_data": {
-                "income": data['income'],
-                "age": data['age'],
-                "loan_amount": data['loan_amount'],
-                "credit_score": data['credit_score'],
-                "employment_years": data['employment_years']
-            }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loan Approval Predictor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
-        
-        return jsonify(result)
-    
-    except ValueError as e:
-        return jsonify({
-            "error": "Invalid data type. All fields must be numeric.",
-            "details": str(e)
-        }), 400
-    
-    except Exception as e:
-        return jsonify({
-            "error": "An error occurred during prediction",
-            "details": str(e)
-        }), 500
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+        h1 { color: #667eea; text-align: center; margin-bottom: 10px; font-size: 32px; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 30px; font-size: 14px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; color: #333; font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input:focus { outline: none; border-color: #667eea; }
+        .input-hint { font-size: 12px; color: #999; margin-top: 4px; }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 10px;
+        }
+        button:hover { transform: translateY(-2px); }
+        button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        .result { margin-top: 30px; padding: 25px; border-radius: 12px; display: none; }
+        .result.approved { background: #d4edda; border: 2px solid #28a745; }
+        .result.rejected { background: #f8d7da; border: 2px solid #dc3545; }
+        .result h2 { margin-bottom: 15px; font-size: 24px; }
+        .result.approved h2 { color: #155724; }
+        .result.rejected h2 { color: #721c24; }
+        .confidence { margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.5); border-radius: 8px; }
+        .confidence-bar { height: 30px; background: #e0e0e0; border-radius: 15px; overflow: hidden; margin-top: 10px; }
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+        .error { background: #f8d7da; border: 2px solid #dc3545; color: #721c24; padding: 15px; border-radius: 8px; margin-top: 20px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏦 Loan Approval Predictor</h1>
+        <p class="subtitle">Enter your financial information to check loan eligibility</p>
+        <form id="loanForm">
+            <div class="form-group">
+                <label for="income">Annual Income ($)</label>
+                <input type="number" id="income" name="income" required min="20000" max="150000" placeholder="75000">
+                <div class="input-hint">Range: $20,000 - $150,000</div>
+            </div>
+            <div class="form-group">
+                <label for="age">Age (years)</label>
+                <input type="number" id="age" name="age" required min="18" max="70" placeholder="35">
+                <div class="input-hint">Range: 18 - 70 years</div>
+            </div>
+            <div class="form-group">
+                <label for="loan_amount">Loan Amount Requested ($)</label>
+                <input type="number" id="loan_amount" name="loan_amount" required min="5000" max="50000" placeholder="25000">
+                <div class="input-hint">Range: $5,000 - $50,000</div>
+            </div>
+            <div class="form-group">
+                <label for="credit_score">Credit Score</label>
+                <input type="number" id="credit_score" name="credit_score" required min="300" max="850" placeholder="720">
+                <div class="input-hint">Range: 300 - 850</div>
+            </div>
+            <div class="form-group">
+                <label for="employment_years">Years of Employment</label>
+                <input type="number" id="employment_years" name="employment_years" required min="0" max="40" placeholder="5">
+                <div class="input-hint">Range: 0 - 40 years</div>
+            </div>
+            <button type="submit" id="submitBtn">Check Loan Eligibility</button>
+        </form>
+        <div class="error" id="errorMsg"></div>
+        <div class="result" id="result">
+            <h2 id="resultTitle"></h2>
+            <p id="resultText"></p>
+            <div class="confidence">
+                <strong>Confidence Level:</strong>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" id="confidenceFill">0%</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const form = document.getElementById('loanForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const resultDiv = document.getElementById('result');
+        const errorDiv = document.getElementById('errorMsg');
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8000)
-EOF
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            resultDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Checking...';
+
+            const formData = {
+                income: parseInt(document.getElementById('income').value),
+                age: parseInt(document.getElementById('age').value),
+                loan_amount: parseInt(document.getElementById('loan_amount').value),
+                credit_score: parseInt(document.getElementById('credit_score').value),
+                employment_years: parseInt(document.getElementById('employment_years').value)
+            };
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    displayResult(data);
+                } else {
+                    throw new Error(data.error || 'Something went wrong');
+                }
+            } catch (error) {
+                errorDiv.textContent = `Error: ${error.message}`;
+                errorDiv.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Check Loan Eligibility';
+            }
+        });
+
+        function displayResult(data) {
+            const resultTitle = document.getElementById('resultTitle');
+            const resultText = document.getElementById('resultText');
+            const confidenceFill = document.getElementById('confidenceFill');
+
+            if (data.loan_approved) {
+                resultDiv.className = 'result approved';
+                resultTitle.textContent = '✅ Loan Approved!';
+                resultText.textContent = 'Congratulations! Based on your financial profile, your loan application is likely to be approved.';
+            } else {
+                resultDiv.className = 'result rejected';
+                resultTitle.textContent = '❌ Loan Rejected';
+                resultText.textContent = 'Unfortunately, based on your current financial profile, your loan application may not be approved.';
+            }
+
+            const confidencePercent = Math.round(data.confidence.approval_probability * 100);
+            confidenceFill.style.width = confidencePercent + '%';
+            confidenceFill.textContent = confidencePercent + '%';
+            resultDiv.style.display = 'block';
+            resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    </script>
+</body>
+</html>
