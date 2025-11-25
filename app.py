@@ -305,7 +305,7 @@ with tab1:
             with st.spinner(" Fetching..."):
                 try:
                     end_date = datetime.now()
-                    start_date = end_date - timedelta(days=60)
+                    start_date = end_date - timedelta(days=90)
                     btc_data = yf.download('BTC-USD', start=start_date, end=end_date, progress=False)
                     
                     if isinstance(btc_data.columns, pd.MultiIndex):
