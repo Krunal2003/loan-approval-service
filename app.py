@@ -1,9 +1,8 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, render_template
 import joblib
 import numpy as np
-import os
 
-app = Flask(__name__, static_folder='.')
+app = Flask(__name__)
 
 # Load model and scaler
 model = joblib.load('loan_model.pkl')
@@ -11,7 +10,7 @@ scaler = joblib.load('scaler.pkl')
 
 @app.route('/')
 def home():
-    return send_from_directory('.', 'index.html')
+    return render_template('index.html')
 
 @app.route('/predict', methods=['POST'])
 def predict():
