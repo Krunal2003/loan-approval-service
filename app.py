@@ -302,27 +302,28 @@ with tab1:
             fetch_btn = st.button(" Fetch Latest Data", type="primary", use_container_width=True)
         
         if fetch_btn:
-            with st.spinner(" Fetching..."):
+            with st.spinner("⏳ Fetching latest Bitcoin data..."):
                 try:
+                    # Download MORE data to ensure we have enough after feature creation
                     end_date = datetime.now()
-                    start_date = end_date - timedelta(days=90)
+                    start_date = end_date - timedelta(days=365)  # 1 year of data for safety
+            
                     btc_data = yf.download('BTC-USD', start=start_date, end=end_date, progress=False)
-                    
+            
+                    # Flatten columns if multi-index
                     if isinstance(btc_data.columns, pd.MultiIndex):
                         btc_data.columns = btc_data.columns.get_level_values(0)
-                    
-                    # Ensure we have enough data
-                    if len(btc_data) < 7:
-                        st.error("Not enough historical data. Need at least 7 days.")
+            
+                    # Validate we have enough data
+                    if len(btc_data) < 50:
+                        st.error("❌ Insufficient data from Yahoo Finance. Please try again.")
                         st.stop()
-
+            
+                    st.success(f"✅ Fetched {len(btc_data)} days of data")
+            
+                    # Get last 7 days for display
                     last_7_days = btc_data['Close'].tail(7).values
                     current_price = float(btc_data['Close'].iloc[-1])
-
-                    # Validate data
-                    if len(last_7_days) != 7:
-                        st.error(f"Expected 7 days of data, got {len(last_7_days)}")
-                        st.stop()
                     
                     # ========================================================
                     # DATA DISPLAY - CLEAN TABLE
@@ -546,7 +547,10 @@ with tab2:
     if refresh_btn:
         with st.spinner("Loading..."):
             try:
-                btc_live = yf.download('BTC-USD', period='30d', progress=False)
+                # Fetch more data for live view
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=90)
+                btc_live = yf.download('BTC-USD', start=start_date, end=end_date, progress=False)
                 if isinstance(btc_live.columns, pd.MultiIndex):
                     btc_live.columns = btc_live.columns.get_level_values(0)
                 
